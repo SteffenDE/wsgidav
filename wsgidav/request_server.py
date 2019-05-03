@@ -818,21 +818,23 @@ class RequestServer(object):
                     environ, content_length, self.block_size
                 )
 
-            fileobj = res.begin_write(content_type=environ.get("CONTENT_TYPE"))
-
-            # Process the data in the body.
-
-            # If the fileobj has a writelines() method, give it the data stream.
-            # If it doesn't, itearate the stream and call write() for each
-            # iteration. This gives providers more flexibility in how they
-            # consume the data.
-            if getattr(fileobj, "writelines", None):
-                fileobj.writelines(data_stream)
+            if hasattr(res, "upload_fileobj"):
+                res.upload_fileobj(environ["wsgi.input"])
             else:
-                for data in data_stream:
-                    fileobj.write(data)
+                fileobj = res.begin_write(content_type=environ.get("CONTENT_TYPE"))
+                # Process the data in the body.
 
-            fileobj.close()
+                # If the fileobj has a writelines() method, give it the data stream.
+                # If it doesn't, itearate the stream and call write() for each
+                # iteration. This gives providers more flexibility in how they
+                # consume the data.
+                if getattr(fileobj, "writelines", None):
+                    fileobj.writelines(data_stream)
+                else:
+                    for data in data_stream:
+                        fileobj.write(data)
+
+                fileobj.close()
 
         except Exception as e:
             res.end_write(with_errors=True)
@@ -1515,8 +1517,8 @@ class RequestServer(object):
             self._fail(
                 HTTP_FORBIDDEN,
                 "Directory browsing is not enabled."
-                "(to enable it put WsgiDavDirBrowser into middleware_stack"
-                "option and set dir_browser -> enabled = True option.)",
+                "(WsgiDavDirBrowser middleware may be enabled using "
+                "the dir_browser option.)",
             )
 
         self._evaluate_if_headers(res, environ)
@@ -1618,13 +1620,16 @@ class RequestServer(object):
         fileobj = res.get_content()
 
         if not doignoreranges:
+            print("seek", range_start)
             fileobj.seek(range_start)
 
         contentlengthremaining = range_length
         while 1:
             if contentlengthremaining < 0 or contentlengthremaining > self.block_size:
+                print(res.get_display_name(), "read", fileobj.tell(), self.block_size)
                 readbuffer = fileobj.read(self.block_size)
             else:
+                print(res.get_display_name(), "read", fileobj.tell(), contentlengthremaining)
                 readbuffer = fileobj.read(contentlengthremaining)
             assert compat.is_bytes(readbuffer)
             yield readbuffer
