@@ -818,7 +818,16 @@ class RequestServer(object):
                     environ, content_length, self.block_size
                 )
 
-            if hasattr(res, "upload_fileobj"):
+            if hasattr(res, "upload_redir"):
+                url = res.upload_redir()
+                if content_length:
+                    res.set_content_length(content_length)
+                # print("redir upload", url)
+                start_response("307 Temporary Redirect", [
+                    ("Location", url)
+                ])
+                return [b""]
+            elif hasattr(res, "upload_fileobj"):
                 res.upload_fileobj(environ["wsgi.input"])
             else:
                 fileobj = res.begin_write(content_type=environ.get("CONTENT_TYPE"))
@@ -1487,7 +1496,17 @@ class RequestServer(object):
         return [b""]
 
     def do_GET(self, environ, start_response):
-        return self._send_resource(environ, start_response, is_head_method=False)
+        path = environ["PATH_INFO"]
+        res = self._davProvider.get_resource_inst(path, environ)
+        if hasattr(res, "get_content_redir"):
+            url = res.get_content_redir()
+            print("redirecting to", url)
+            start_response("302 Found", [
+                ("Location", url)
+            ])
+            return [b""]
+        else:
+            return self._send_resource(environ, start_response, is_head_method=False)
 
     def do_HEAD(self, environ, start_response):
         return self._send_resource(environ, start_response, is_head_method=True)
